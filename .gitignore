@@ -1,2 +1,3 @@
 .gitignore
 taskapp-64fc4-firebase-adminsdk-fbsvc-090df849e3.json
+.env
