@@ -31,7 +31,7 @@ firebase_credentials = {
     "universe_domain": os.getenv('FIREBASE_UNIVERSE_DOMAIN')
 }
 
-# Inicializar Firebase
+
 try:
     cred = credentials.Certificate(firebase_credentials)
     firebase_admin.initialize_app(cred)
@@ -39,7 +39,6 @@ try:
 except Exception as e:
     raise ValueError(f"Error al inicializar Firebase: {e}")
 
-# Inicializar Firestore
 db = firestore.client()
 
 app = Flask(__name__)
@@ -60,7 +59,6 @@ def login():
     email = data.get('email')
     password = data.get('password')
 
-    # Buscar usuario por email
     users_ref = db.collection("Users").where("email", "==", email).stream()
     user_doc = None
     for doc in users_ref:
@@ -349,28 +347,10 @@ def get_tasks():
         return jsonify(statusCode=401, intMessage="Token inválido", data={})
 
 @app.route("/delete_task/<string:task_id>", methods=["DELETE"])
-@jwt_required()
 def delete_task(task_id):
-    user_id = get_jwt_identity()  # Obtener el usuario autenticado
-
-    # Buscar la tarea por ID y verificar que pertenece al usuario
-    task = Task.query.filter_by(uid=task_id, user_id=user_id).first()
-
-    if not task:
-        return jsonify({"intMessage": "Tarea no encontrada o no autorizada", "statusCode": 403}), 403
-
-    db.session.delete(task)
-    db.session.commit()
-
-    return jsonify({"intMessage": "Tarea eliminada con éxito", "statusCode": 200}), 200
-
-
-
-@app.route("/update_task/<string:task_id>", methods=["PUT"])
-def update_task(task_id):
     token = request.headers.get("Authorization")
     if not token:
-        return jsonify(statusCode=401, intMessage="Token de autenticación requerido", data={})
+        return jsonify(statusCode=401, intMessage="Token de autenticación requerido", data={}), 401
 
     try:
         # Decodificar el token
@@ -378,54 +358,28 @@ def update_task(task_id):
         user_id = payload.get("user_id")
 
         if not user_id:
-            return jsonify(statusCode=401, intMessage="El UID no se pudo obtener del token", data={})
+            return jsonify(statusCode=401, intMessage="El UID no se pudo obtener del token", data={}), 401
 
-        # Obtener los datos de la solicitud
-        data = request.get_json()
-
-        # Buscar la tarea en Firestore por el task_id (ID de documento)
-        print(f"Buscando tarea con task_id: {task_id}")
-
-        task_ref = db.collection('task').document(task_id)
+        # Obtener referencia al documento en Firestore (usando el task_id como ID del documento)
+        task_ref = db.collection("task").document(task_id)
         task = task_ref.get()
-        
+
         if not task.exists:
-            return jsonify({"intMessage": "Tarea no encontrada", "statusCode": 404}), 404
+            return jsonify(statusCode=404, intMessage="Tarea no encontrada", data={}), 404
 
-        task_data = task.to_dict()
+        # Eliminar la tarea
+        task_ref.delete()
 
-        # Verificar que la tarea pertenece al usuario autenticado (compara el UID)
-        if task_data.get("uid") != user_id:
-            return jsonify({"intMessage": "No autorizado a modificar esta tarea", "statusCode": 403}), 403
-
-        # Actualizar los campos de la tarea si se enviaron en la solicitud
-        updates = {}
-        if "nameTask" in data:
-            updates["nameTask"] = data["nameTask"]
-        if "descripcion" in data:
-            updates["descripcion"] = data["descripcion"]
-        if "categoria" in data:
-            updates["categoria"] = data["categoria"]
-        if "estatus" in data:
-            updates["estatus"] = data["estatus"]
-        if "deadLine" in data:
-            updates["deadLine"] = data["deadLine"]
-
-        # Si no hay cambios, devolvemos una respuesta adecuada
-        if not updates:
-            return jsonify({"intMessage": "No se enviaron datos para actualizar", "statusCode": 400}), 400
-
-        # Realizar la actualización en Firestore
-        task_ref.update(updates)
-
-        return jsonify({"intMessage": "Tarea actualizada con éxito", "statusCode": 200}), 200
+        return jsonify(statusCode=200, intMessage="Tarea eliminada con éxito", data={}), 200
 
     except jwt.ExpiredSignatureError:
-        return jsonify(statusCode=401, intMessage="El token ha expirado", data={})
+        return jsonify(statusCode=401, intMessage="El token ha expirado", data={}), 401
     except jwt.InvalidTokenError:
-        return jsonify(statusCode=401, intMessage="Token inválido", data={})
+        return jsonify(statusCode=401, intMessage="Token inválido", data={}), 401
     except Exception as e:
-        return jsonify(statusCode=500, intMessage=f"Error interno: {str(e)}", data={})
+        return jsonify(statusCode=500, intMessage=str(e), data={}), 500
+
+
 
 
 @app.route("/create_group", methods=["POST"])
@@ -687,6 +641,98 @@ def obtener_tareas_usuario():
         return jsonify({"error": "Token inválido"}), 401
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+#crud
+
+@app.route('/update_users/<id>', methods=['PUT'])
+def update_user(id):
+    data = request.json
+    user_ref = db.collection("Users").document(id)
+
+    if not user_ref.get().exists:
+        return jsonify(statusCode=404, intMessage="Usuario no encontrado", data={})
+
+    updates = {}
+    if "username" in data:
+        updates["userName"] = data["username"]
+    if "email" in data:
+        updates["email"] = data["email"]
+    if "rol" in data:
+        updates["rol"] = data["rol"]
+    user_ref.update(updates)
+    return jsonify(statusCode=200, intMessage="Usuario actualizado correctamente", data={})
+
+
+
+@app.route('/delate_users/<id>', methods=['DELETE'])
+def delete_user(id):
+    user_ref = db.collection("Users").document(id)
+
+    if not user_ref.get().exists:
+        return jsonify(statusCode=404, intMessage="Usuario no encontrado", data={})
+
+    user_ref.delete()
+    return jsonify(statusCode=200, intMessage="Usuario eliminado correctamente", data={})
+
+@app.route('/add_users', methods=['POST'])
+def add_users():
+    data = request.json
+    username = data.get('username')
+    email = data.get('email')
+    password = data.get('password')
+    rol = data.get('rol')
+
+    # Verificar campos obligatorios
+    if not username or not email or not password or not rol:
+        return jsonify(statusCode=400, intMessage="Todos los campos son obligatorios", data={})
+
+    # Hashear la contraseña
+    hashed_password = generate_password_hash(password)
+
+    # Verificar si el usuario ya existe (buscando por email)
+    users_ref = db.collection("Users").where("email", "==", email).stream()
+    if any(users_ref):
+        return jsonify(statusCode=409, intMessage="El usuario ya existe", data={})
+
+    # Crear documento en la colección "Users"
+    new_user = {
+        "userName": username,
+        "email": email,
+        "password": hashed_password,
+        "last_login": None,
+        "rol": rol,
+        "created_at": datetime.datetime.utcnow()
+    }
+
+    db.collection("Users").add(new_user)
+
+    return jsonify(statusCode=201, intMessage="Usuario registrado exitosamente", data={})
+
+
+
+@app.route('/update_task/<group_id>/<task_id>', methods=['PUT'])
+def update_task(group_id, task_id):
+    data = request.json
+    estatus = data.get('estatus')
+
+    # Verificar campos obligatorios
+    if not estatus:
+        return jsonify(statusCode=400, intMessage="El campo 'estatus' es obligatorio", data={})
+
+    try:
+        # Referencia a la tarea dentro del grupo
+        task_ref = db.collection('groups').document(group_id).collection('tasks').document(task_id)
+        
+        # Actualizar el estatus de la tarea
+        task_ref.update({
+            'estatus': estatus,
+            'updated_at': datetime.datetime.utcnow()
+        })
+
+        return jsonify(statusCode=200, intMessage="Tarea actualizada exitosamente", data={})
+    except Exception as e:
+        return jsonify(statusCode=500, intMessage=f"Error al actualizar la tarea: {e}", data={})
+
 
 if __name__ == '__main__':
     app.run(debug=True)
