@@ -603,11 +603,11 @@ def add_user_to_grupo():
 def obtener_tareas_usuario():
     """ Endpoint para obtener tareas de un usuario autenticado """
 
-    #Obtener y validar el token
+    # Obtener y validar el token
     auth_header = request.headers.get("Authorization")
     if not auth_header or "Bearer " not in auth_header:
         return jsonify({"error": "Token no proporcionado"}), 401
-    
+
     token = auth_header.split("Bearer ")[1]
 
     try:
@@ -624,16 +624,20 @@ def obtener_tareas_usuario():
 
         for grupo in grupos_ref:
             grupo_data = grupo.to_dict()
-            tasks_ref = db.collection(f"groups/{grupo.id}/tasks").stream()
+            grupo_id = grupo.id
+            grupo_name = grupo_data.get("name")  # Obtener el nombre del grupo
+
+            tasks_ref = db.collection(f"groups/{grupo_id}/tasks").stream()
 
             for tarea in tasks_ref:
                 tarea_data = tarea.to_dict()
                 if user_id in tarea_data.get("ids_usuarios", []):
                     tarea_data["id_tarea"] = tarea.id  # Agregar ID de la tarea
-                    tarea_data["grupo"] = grupo.id  # Agregar ID del grupo
+                    tarea_data["grupo"] = grupo_id  # Agregar ID del grupo
+                    tarea_data["grupo_name"] = grupo_name  # Agregar el nombre del grupo
                     tareas_usuario.append(tarea_data)
 
-        return jsonify(tareas_usuario), 200
+        return jsonify(statusCode=200, intMessage="Tareas obtenidas exitosamente", data=tareas_usuario)
 
     except jwt.ExpiredSignatureError:
         return jsonify({"error": "Token expirado"}), 401
@@ -641,7 +645,7 @@ def obtener_tareas_usuario():
         return jsonify({"error": "Token inválido"}), 401
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
+    
 #crud
 
 @app.route('/update_users/<id>', methods=['PUT'])
@@ -675,7 +679,7 @@ def delete_user(id):
     return jsonify(statusCode=200, intMessage="Usuario eliminado correctamente", data={})
 
 @app.route('/add_users', methods=['POST'])
-def add_users():
+def add_users_fu():
     data = request.json
     username = data.get('username')
     email = data.get('email')
@@ -762,6 +766,102 @@ def update_general_task(task_id):
         return jsonify(statusCode=200, intMessage="Tarea general actualizada exitosamente", data={})
     except Exception as e:
         return jsonify(statusCode=500, intMessage=f"Error al actualizar la tarea general: {e}", data={})
+
+
+@app.route('/add_users', methods=['POST'])
+def add_users():
+    data = request.json
+    username = data.get('username')
+    email = data.get('email')
+    password = data.get('password')
+    rol = data.get('rol')
+
+    # Verificar campos obligatorios
+    if not username or not email or not password or not rol:
+        return jsonify(statusCode=400, intMessage="Todos los campos son obligatorios", data={})
+
+    # Hashear la contraseña
+    hashed_password = generate_password_hash(password)
+
+    # Verificar si el usuario ya existe (buscando por email)
+    users_ref = db.collection("Users").where("email", "==", email).stream()
+    if any(users_ref):
+        return jsonify(statusCode=409, intMessage="El usuario ya existe", data={})
+
+    # Crear documento en la colección "Users"
+    new_user = {
+        "userName": username,
+        "email": email,
+        "password": hashed_password,
+        "last_login": None,
+        "rol": rol,
+        "created_at": datetime.datetime.utcnow()
+    }
+
+    db.collection("Users").add(new_user)
+
+    return jsonify(statusCode=201, intMessage="Usuario registrado exitosamente", data={})
+
+
+
+@app.route('/get_usuarios', methods=['GET'])
+def get_usuarios_u():
+    try:
+        users_ref = db.collection("Users").stream()
+        users = []
+        for doc in users_ref:
+            user = doc.to_dict()
+            user["id"] = doc.id
+            users.append(user)
+        return jsonify(statusCode=200, intMessage='Usuarios obtenidos exitosamente', data=users)
+    except Exception as e:
+        return jsonify(statusCode=500, intMessage=str(e), data=[])
+    
+    
+    
+@app.route('/update_users/<id>', methods=['PUT'])
+def update_ussr(id):
+    data = request.json  # Obtener los datos enviados en la solicitud
+    user_ref = db.collection("Users").document(id)
+
+    # Verificar si el usuario existe
+    if not user_ref.get().exists:
+        return jsonify(statusCode=404, intMessage="Usuario no encontrado", data={})
+
+    # Validar los campos enviados
+    updates = {}
+    if "username" in data and data["username"]:
+        updates["userName"] = data["username"]
+    if "email" in data and data["email"]:
+        updates["email"] = data["email"]
+    if "rol" in data and data["rol"]:
+        updates["rol"] = data["rol"]
+
+    # Si no hay campos válidos para actualizar, devolver un error
+    if not updates:
+        return jsonify(statusCode=400, intMessage="No se enviaron campos válidos para actualizar", data={})
+
+    # Actualizar los datos del usuario
+    try:
+        updates["updated_at"] = datetime.datetime.utcnow()  # Agregar campo de fecha de actualización
+        user_ref.update(updates)
+        return jsonify(statusCode=200, intMessage="Usuario actualizado correctamente", data={})
+    except Exception as e:
+        return jsonify(statusCode=500, intMessage=f"Error al actualizar el usuario: {e}", data={})
+
+
+
+@app.route('/delete_users/<id>', methods=['DELETE'])
+def delete_users(id):
+    user_ref = db.collection("Users").document(id)
+
+    if not user_ref.get().exists:
+        return jsonify(statusCode=404, intMessage="Usuario no encontrado", data={})
+
+    user_ref.delete()
+    return jsonify(statusCode=200, intMessage="Usuario eliminado correctamente", data={})
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)
