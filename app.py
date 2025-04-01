@@ -713,26 +713,55 @@ def add_users():
 @app.route('/update_task/<group_id>/<task_id>', methods=['PUT'])
 def update_task(group_id, task_id):
     data = request.json
-    estatus = data.get('estatus')
 
-    # Verificar campos obligatorios
-    if not estatus:
-        return jsonify(statusCode=400, intMessage="El campo 'estatus' es obligatorio", data={})
+    # Verificar que se haya enviado al menos un campo para actualizar
+    if not data:
+        return jsonify(statusCode=400, intMessage="No se enviaron datos para actualizar", data={})
 
     try:
         # Referencia a la tarea dentro del grupo
         task_ref = db.collection('groups').document(group_id).collection('tasks').document(task_id)
-        
-        # Actualizar el estatus de la tarea
-        task_ref.update({
-            'estatus': estatus,
-            'updated_at': datetime.datetime.utcnow()
-        })
+
+        # Verificar si la tarea existe
+        if not task_ref.get().exists:
+            return jsonify(statusCode=404, intMessage="La tarea no existe", data={})
+
+        # Actualizar los campos enviados en el cuerpo de la solicitud
+        update_data = {key: value for key, value in data.items() if value is not None}
+        update_data['updated_at'] = datetime.datetime.utcnow()  # Agregar campo de actualización
+
+        task_ref.update(update_data)
 
         return jsonify(statusCode=200, intMessage="Tarea actualizada exitosamente", data={})
     except Exception as e:
         return jsonify(statusCode=500, intMessage=f"Error al actualizar la tarea: {e}", data={})
 
+
+@app.route('/update_general_task/<task_id>', methods=['PUT'])
+def update_general_task(task_id):
+    data = request.json
+
+    # Verificar que se haya enviado al menos un campo para actualizar
+    if not data:
+        return jsonify(statusCode=400, intMessage="No se enviaron datos para actualizar", data={})
+
+    try:
+        # Referencia a la tarea en la colección "task"
+        task_ref = db.collection('task').document(task_id)
+
+        # Verificar si la tarea existe
+        if not task_ref.get().exists:
+            return jsonify(statusCode=404, intMessage="La tarea no existe", data={})
+
+        # Actualizar los campos enviados en el cuerpo de la solicitud
+        update_data = {key: value for key, value in data.items() if value is not None}
+        update_data['updated_at'] = datetime.datetime.utcnow()  # Agregar campo de actualización
+
+        task_ref.update(update_data)
+
+        return jsonify(statusCode=200, intMessage="Tarea general actualizada exitosamente", data={})
+    except Exception as e:
+        return jsonify(statusCode=500, intMessage=f"Error al actualizar la tarea general: {e}", data={})
 
 if __name__ == '__main__':
     app.run(debug=True)
