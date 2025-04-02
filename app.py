@@ -718,7 +718,6 @@ def add_users_fu():
 def update_task(group_id, task_id):
     data = request.json
 
-    # Verificar que se haya enviado al menos un campo para actualizar
     if not data:
         return jsonify(statusCode=400, intMessage="No se enviaron datos para actualizar", data={})
 
